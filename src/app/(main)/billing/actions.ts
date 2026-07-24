@@ -12,8 +12,7 @@ export async function createCustomerPortalSession() {
   }
 
   const stripeCustomerId = user.privateMetadata.stripeCustomerId as
-    | string
-    | undefined;
+    string | undefined;
 
   if (!stripeCustomerId) {
     throw new Error("Stripe customer ID not found");
