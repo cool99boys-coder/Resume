@@ -66,7 +66,8 @@ async function handleSessionCompleted(session: Stripe.Checkout.Session) {
         ? session.subscription
         : session.subscription.id;
 
-    const stripeSubscription = await stripe.subscriptions.retrieve(subscriptionId);
+    const stripeSubscription =
+      await stripe.subscriptions.retrieve(subscriptionId);
 
     await upsertUserSubscription(stripeSubscription, userId);
   }
