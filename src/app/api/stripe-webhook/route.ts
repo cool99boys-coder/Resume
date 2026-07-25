@@ -59,6 +59,67 @@ async function handleSessionCompleted(session: Stripe.Checkout.Session) {
       stripeCustomerId: session.customer as string,
     },
   });
+
+  if (session.subscription) {
+    const subscriptionId =
+      typeof session.subscription === "string"
+        ? session.subscription
+        : session.subscription.id;
+
+    const stripeSubscription = await stripe.subscriptions.retrieve(subscriptionId);
+
+    await upsertUserSubscription(stripeSubscription, userId);
+  }
+}
+
+async function upsertUserSubscription(
+  subscription: Stripe.Subscription,
+  userId?: string,
+) {
+  const resolvedUserId = userId ?? subscription.metadata?.userId;
+
+  if (!resolvedUserId) {
+    const existingSubscription = await prisma.userSubscription.findFirst({
+      where: {
+        stripeCustomerId: subscription.customer as string,
+      },
+      select: {
+        userId: true,
+      },
+    });
+
+    if (!existingSubscription?.userId) {
+      throw new Error("User ID is missing in subscription metadata");
+    }
+
+    resolvedUserId = existingSubscription.userId;
+  }
+
+  const priceId = subscription.items.data[0]?.price.id;
+
+  if (!priceId) {
+    throw new Error("No price found on subscription");
+  }
+
+  await prisma.userSubscription.upsert({
+    where: {
+      userId: resolvedUserId,
+    },
+    create: {
+      userId: resolvedUserId,
+      stripeSubscriptionId: subscription.id,
+      stripeCustomerId: subscription.customer as string,
+      stripePriceId: priceId,
+      stripeCurrentPeriodEnd: new Date(subscription.current_period_end * 1000),
+      stripeCancelAtPeriodEnd: subscription.cancel_at_period_end,
+    },
+    update: {
+      stripeSubscriptionId: subscription.id,
+      stripePriceId: priceId,
+      stripeCurrentPeriodEnd: new Date(subscription.current_period_end * 1000),
+      stripeCancelAtPeriodEnd: subscription.cancel_at_period_end,
+    },
+  });
 }
 
 async function handleSubscriptionCreatedOrUpdated(subscriptionId: string) {
@@ -69,28 +130,7 @@ async function handleSubscriptionCreatedOrUpdated(subscriptionId: string) {
     subscription.status === "trialing" ||
     subscription.status === "past_due"
   ) {
-    await prisma.userSubscription.upsert({
-      where: {
-        userId: subscription.metadata.userId,
-      },
-      create: {
-        userId: subscription.metadata.userId,
-        stripeSubscriptionId: subscription.id,
-        stripeCustomerId: subscription.customer as string,
-        stripePriceId: subscription.items.data[0].price.id,
-        stripeCurrentPeriodEnd: new Date(
-          subscription.current_period_end * 1000,
-        ),
-        stripeCancelAtPeriodEnd: subscription.cancel_at_period_end,
-      },
-      update: {
-        stripePriceId: subscription.items.data[0].price.id,
-        stripeCurrentPeriodEnd: new Date(
-          subscription.current_period_end * 1000,
-        ),
-        stripeCancelAtPeriodEnd: subscription.cancel_at_period_end,
-      },
-    });
+    await upsertUserSubscription(subscription);
   } else {
     await prisma.userSubscription.deleteMany({
       where: {
