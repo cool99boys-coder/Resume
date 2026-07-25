@@ -67,7 +67,7 @@ export async function generateSummary(input: GenerateSummaryInput) {
   console.log("userMessage", userMessage);
 
   const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
+    model: "openai/gpt-oss-120b",
     messages: [
       {
         role: "system",
@@ -123,7 +123,7 @@ export async function generateWorkExperience(
   `;
 
   const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
+    model: "openai/gpt-oss-120b",
     messages: [
       {
         role: "system",

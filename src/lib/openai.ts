@@ -1,8 +1,8 @@
-import OpenAI from "openai";
+import Groq from "groq-sdk";
 import { env } from "@/env";
 
-const openai = new OpenAI({
-  apiKey: env.GEMINI_API_KEY,
+const groq = new Groq({
+  apiKey: env.GROQ_API_KEY,
 });
 
-export default openai;
+export default groq;
