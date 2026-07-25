@@ -46,10 +46,10 @@ export async function POST(req: NextRequest) {
 }
 
 async function handleSessionCompleted(session: Stripe.Checkout.Session) {
-  const userId = session.metadata?.userId;
+  const userId = await resolveUserIdFromSession(session);
 
   if (!userId) {
-    throw new Error("User ID is missing in session metadata");
+    throw new Error("User ID could not be resolved from the checkout session");
   }
 
   await (
@@ -73,16 +73,61 @@ async function handleSessionCompleted(session: Stripe.Checkout.Session) {
   }
 }
 
+async function resolveUserIdFromSession(session: Stripe.Checkout.Session) {
+  const explicitUserId =
+    session.metadata?.userId ?? session.client_reference_id;
+
+  if (explicitUserId) {
+    return explicitUserId;
+  }
+
+  const email = session.customer_details?.email ?? session.customer_email;
+
+  if (email) {
+    const clerk = await clerkClient();
+    const users = await clerk.users.getUserList({ limit: 200 });
+    const matchingUser = users.data.find((user) =>
+      user.emailAddresses.some(
+        (emailAddress) => emailAddress.emailAddress === email,
+      ),
+    );
+
+    if (matchingUser) {
+      return matchingUser.id;
+    }
+  }
+
+  return undefined;
+}
+
 async function upsertUserSubscription(
   subscription: Stripe.Subscription,
   userId?: string,
 ) {
-  const resolvedUserId = userId ?? subscription.metadata?.userId;
+  let resolvedUserId = userId ?? subscription.metadata?.userId;
 
   if (!resolvedUserId) {
+    const customerId =
+      typeof subscription.customer === "string"
+        ? subscription.customer
+        : subscription.customer?.id;
+
+    if (customerId) {
+      const clerk = await clerkClient();
+      const users = await clerk.users.getUserList({ limit: 200 });
+      const matchingUser = users.data.find((user) => {
+        const storedCustomerId = user.privateMetadata?.stripeCustomerId;
+        return storedCustomerId === customerId;
+      });
+
+      if (matchingUser) {
+        return upsertUserSubscription(subscription, matchingUser.id);
+      }
+    }
+
     const existingSubscription = await prisma.userSubscription.findFirst({
       where: {
-        stripeCustomerId: subscription.customer as string,
+        stripeCustomerId: customerId ?? "",
       },
       select: {
         userId: true,
@@ -90,10 +135,14 @@ async function upsertUserSubscription(
     });
 
     if (!existingSubscription?.userId) {
-      throw new Error("User ID is missing in subscription metadata");
+      throw new Error("User ID could not be resolved for the subscription");
     }
 
     resolvedUserId = existingSubscription.userId;
+  }
+
+  if (!resolvedUserId) {
+    throw new Error("User ID could not be resolved for the subscription");
   }
 
   const priceId = subscription.items.data[0]?.price.id;
