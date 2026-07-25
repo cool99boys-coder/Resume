@@ -35,8 +35,31 @@ export default function useAutoSaveResume(resumeData: ResumeValues) {
 
         const newData = structuredClone(debouncedResumeData);
 
+        // Filter out fully empty work experiences
+        const filteredWorkExperiences =
+          newData.workExperiences?.filter(
+            (exp) =>
+              exp.position ||
+              exp.company ||
+              exp.startDate ||
+              exp.endDate ||
+              exp.description,
+          ) || [];
+
+        // Filter out fully empty educations
+        const filteredEducations =
+          newData.educations?.filter(
+            (edu) =>
+              edu.school ||
+              edu.degree ||
+              edu.startDate ||
+              edu.endDate,
+          ) || [];
+
         const updatedResume = await saveResume({
           ...newData,
+          workExperiences: filteredWorkExperiences,
+          educations: filteredEducations,
           ...(JSON.stringify(lastSavedData.photo, fileReplacer) ===
             JSON.stringify(newData.photo, fileReplacer) && {
             photo: undefined,

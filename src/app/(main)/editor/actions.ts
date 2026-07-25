@@ -3,10 +3,9 @@
 import { canCreateResume, canUseCustomizations } from "@/lib/permissions";
 import prisma from "@/lib/prisma";
 import { getUserSubscriptionLevel } from "@/lib/subscription";
+import { uploadResumePhoto } from "@/lib/cloudinary";
 import { resumeSchema, ResumeValues } from "@/lib/validation";
 import { auth } from "@clerk/nextjs/server";
-import { del, put } from "@vercel/blob";
-import path from "path";
 
 export async function saveResume(values: ResumeValues) {
   const { id } = values;
@@ -55,19 +54,14 @@ export async function saveResume(values: ResumeValues) {
   let newPhotoUrl: string | undefined | null = undefined;
 
   if (photo instanceof File) {
-    if (existingResume?.photoUrl) {
-      await del(existingResume.photoUrl);
+    try {
+      const result = await uploadResumePhoto(photo, userId);
+      newPhotoUrl = result.secure_url;
+    } catch (error) {
+      console.error("Failed to upload photo:", error);
+      throw new Error("Failed to upload photo");
     }
-
-    const blob = await put(`resume_photos/${path.extname(photo.name)}`, photo, {
-      access: "public",
-    });
-
-    newPhotoUrl = blob.url;
   } else if (photo === null) {
-    if (existingResume?.photoUrl) {
-      await del(existingResume.photoUrl);
-    }
     newPhotoUrl = null;
   }
 
